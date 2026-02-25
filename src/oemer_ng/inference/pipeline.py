@@ -157,13 +157,21 @@ class OMRPipeline:
         
         # Get prediction
         probabilities = torch.softmax(output, dim=1)
-        prediction = torch.argmax(probabilities, dim=1).item()
+
+        if output.dim() == 4:
+            # Segmentation: (B, C, H, W) -> (B, H, W)
+            prediction = torch.argmax(probabilities, dim=1).cpu().numpy()[0]
+            confidence = torch.max(probabilities, dim=1).values.cpu().numpy()[0]
+        else:
+            # Classification: (B, C) -> scalar
+            prediction = torch.argmax(probabilities, dim=1).item()
+            confidence = probabilities[0, prediction].item()
         
         if return_probabilities:
             return {
                 'prediction': prediction,
                 'probabilities': probabilities.cpu().numpy()[0],
-                'confidence': probabilities[0, prediction].item()
+                'confidence': confidence
             }
         else:
             return prediction
@@ -198,8 +206,12 @@ class OMRPipeline:
             
             # Inference
             output = self.model(batch_tensor)
-            batch_predictions = torch.argmax(output, dim=1).cpu().tolist()
-            predictions.extend(batch_predictions)
+            if output.dim() == 4:
+                batch_predictions = torch.argmax(output, dim=1).cpu().numpy()
+                predictions.extend([p for p in batch_predictions])
+            else:
+                batch_predictions = torch.argmax(output, dim=1).cpu().tolist()
+                predictions.extend(batch_predictions)
         
         return predictions
     

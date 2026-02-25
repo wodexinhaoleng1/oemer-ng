@@ -40,8 +40,17 @@ def main():
     print("\nRunning mock inference...")
     dummy_image = torch.randn(1, 3, 512, 512)
     result = pipeline.predict(dummy_image, enhance=False, return_probabilities=True)
-    print(f"Prediction: {result['prediction']}")
-    print(f"Confidence: {result['confidence']:.4f}")
+
+    import numpy as np
+    prediction = result['prediction']
+    confidence = result['confidence']
+
+    if isinstance(prediction, np.ndarray):
+        print(f"Prediction shape: {prediction.shape}")
+        print(f"Mean Confidence: {confidence.mean():.2%}")
+    else:
+        print(f"Prediction: {prediction}")
+        print(f"Confidence: {confidence:.2%}")
     
     print("\nExample completed successfully!")
 

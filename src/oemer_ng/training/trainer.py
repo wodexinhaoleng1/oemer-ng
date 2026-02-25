@@ -109,8 +109,12 @@ class Trainer:
             # Statistics
             total_loss += loss.item()
             pred = output.argmax(dim=1)
-            correct += pred.eq(target).sum().item()
-            total += target.size(0)
+            if target.dim() == 4:
+                target_indices = target.argmax(dim=1)
+            else:
+                target_indices = target
+            correct += pred.eq(target_indices).sum().item()
+            total += target_indices.numel()
             
             self.global_step += 1
             
@@ -155,8 +159,12 @@ class Trainer:
             
             total_loss += loss.item()
             pred = output.argmax(dim=1)
-            correct += pred.eq(target).sum().item()
-            total += target.size(0)
+            if target.dim() == 4:
+                target_indices = target.argmax(dim=1)
+            else:
+                target_indices = target
+            correct += pred.eq(target_indices).sum().item()
+            total += target_indices.numel()
         
         avg_loss = total_loss / len(self.val_loader)
         accuracy = 100. * correct / total

@@ -1,18 +1,13 @@
 # oemer-ng
 
-A modern, fast Optical Music Recognition (OMR) package with state-of-the-art deep learning and GGML support for embedded devices.
+A modern, fast Optical Music Recognition (OMR) package. This is a PyTorch port of the original [oemer](https://github.com/BreezeWhite/oemer) project.
 
 ## Features
 
-🎵 **Modern Architecture**: CNN-based model with attention mechanisms for superior recognition accuracy
-
-⚡ **High Performance**: Optimized for speed with quantization support (INT8/FP16)
-
-📱 **Embedded-Ready**: GGML export for efficient inference on CPUs and embedded devices
-
-🔧 **Easy to Use**: Simple API for both inference and training
-
-🚀 **Production-Ready**: Includes quantization, ONNX export, and comprehensive training utilities
+- **Training Pipeline**: Complete training loop for semantic segmentation of music scores.
+- **Dataset Support**: Built-in support for CvcMuscima-Distortions and DeepScoresV2 datasets.
+- **Modern Architecture**: U-Net based model with focal tversky loss for handling class imbalance.
+- **Inference**: Segmentation of music symbols and staff lines.
 
 ## Installation
 
@@ -21,200 +16,102 @@ A modern, fast Optical Music Recognition (OMR) package with state-of-the-art dee
 git clone https://github.com/helium729/oemer-ng.git
 cd oemer-ng
 
-# Install in development mode
+# Install in editable mode
 pip install -e .
-
-# Or install with optional dependencies
-pip install -e ".[dev,onnx,training]"
 ```
 
-## Quick Start
+## Quick Start: Training with Sample Data
 
-### Basic Inference
+If you want to try the training pipeline without downloading gigabytes of data, we provide a script to generate sample data.
+
+1.  **Generate Sample Data**:
+    ```bash
+    python scripts/create_sample_data.py
+    ```
+    This will create `data/sample_cvc` and `data/sample_ds2` directories.
+
+2.  **Run Training**:
+    ```bash
+    # Train on CvcMuscima-style sample data
+    python examples/train_model.py --dataset_path data/sample_cvc --dataset_type cvc --epochs 5
+
+    # Train on DeepScores-style sample data
+    python examples/train_model.py --dataset_path data/sample_ds2 --dataset_type ds2 --epochs 5
+    ```
+
+## Training on Real Datasets
+
+To train a robust model, you should use the full datasets.
+
+### 1. CVC-MUSCIMA (Staff Removal)
+
+This dataset focuses on staff line removal and symbol segmentation on handwritten scores.
+
+**Download:**
+- Go to the [CVC-MUSCIMA Database page](http://pages.cvc.uab.es/cvcmuscima/index_database.html).
+- Download the **Staff Removal set** (1.9 GB): [Direct Link](http://datasets.cvc.uab.es/muscima/CVCMUSCIMA_SR.zip).
+
+**Preparation:**
+1.  Extract the zip file. You should see folders like `CvcMuscima-Distortions` containing distortion types (e.g., `ideal`, `curvature`, `thickness-ratio`).
+2.  Each distortion folder contains subfolders (`w-xx`) with `image`, `gt` (staff lines), and `symbol` (music symbols) directories.
+3.  Point the training script to the root folder containing the distortion types.
+
+**Training Command:**
+```bash
+python examples/train_model.py \
+    --dataset_path /path/to/CvcMuscima-Distortions \
+    --dataset_type cvc \
+    --epochs 50 \
+    --batch_size 8
+```
+
+### 2. DeepScoresV2 (Dense)
+
+This dataset contains large-scale synthetic music scores with dense segmentation masks.
+
+**Download:**
+- Go to the [Zenodo Record](https://zenodo.org/records/4012193).
+- Download `ds2_dense.tar.gz` (741 MB) for a smaller, manageable dataset.
+
+**Preparation:**
+1.  Extract the tarball.
+2.  You should see an `images` directory and a `segmentation` directory (or similar structure).
+3.  Ensure the directory structure matches:
+    ```
+    ds2_dense/
+        images/
+            *.png
+        segmentation/
+            *_seg.png
+    ```
+
+**Training Command:**
+```bash
+python examples/train_model.py \
+    --dataset_path /path/to/ds2_dense \
+    --dataset_type ds2 \
+    --epochs 50 \
+    --batch_size 4
+```
+
+## Inference
+
+You can run inference using a trained model or the default initialized model.
 
 ```python
+import torch
 from oemer_ng import OMRPipeline
 
-# Create pipeline
-pipeline = OMRPipeline(model_path='path/to/model.pth')
+# Load your trained model
+pipeline = OMRPipeline(model_path='checkpoints/final_model.pth', num_classes=3)
 
-# Run inference on an image
-result = pipeline.predict('sheet_music.jpg', return_probabilities=True)
-print(f"Prediction: {result['prediction']}")
-print(f"Confidence: {result['confidence']:.2%}")
+# Predict
+image_path = 'path/to/sheet_music.png'
+# Returns a dictionary with prediction map and confidence
+result = pipeline.predict(image_path, return_probabilities=True)
+
+prediction_map = result['prediction'] # (H, W) array of class indices
 ```
-
-### Training a Model
-
-```python
-from oemer_ng.models.omr_model import OMRModel
-from oemer_ng.training.trainer import Trainer
-from oemer_ng.training.dataset import create_dataloaders
-
-# Create model
-model = OMRModel(num_classes=128)
-
-# Create dataloaders
-train_loader, val_loader = create_dataloaders(
-    train_dir='data/train',
-    val_dir='data/val',
-    batch_size=32
-)
-
-# Create trainer
-trainer = Trainer(
-    model=model,
-    train_loader=train_loader,
-    val_loader=val_loader
-)
-
-# Train
-trainer.train(num_epochs=50)
-```
-
-### Export for Deployment
-
-```python
-from oemer_ng.models.omr_model import OMRModel
-from oemer_ng.export.ggml_exporter import convert_model_for_deployment
-
-# Load model
-model = OMRModel(num_classes=128)
-
-# Export to multiple formats
-results = convert_model_for_deployment(
-    model,
-    output_dir='./deployment',
-    formats=['ggml', 'onnx'],
-    use_fp16=True
-)
-```
-
-## Architecture
-
-The package is built with a modular architecture:
-
-- **models/**: Neural network architectures
-  - Modern CNN with residual blocks
-  - Self-attention modules for feature enhancement
-  - Configurable depth and width
-
-- **inference/**: Inference pipeline
-  - Preprocessing with enhancement
-  - Batch inference support
-  - Quantization support
-
-- **training/**: Training utilities
-  - Flexible trainer with checkpointing
-  - Early stopping and LR scheduling
-  - Comprehensive logging
-
-- **quantization/**: Model compression
-  - Dynamic quantization (INT8)
-  - Static quantization with calibration
-  - Model size comparison tools
-
-- **export/**: Deployment formats
-  - GGML export for embedded devices
-  - ONNX export for cross-platform deployment
-  - FP32/FP16 precision support
-
-## Model Quantization
-
-Reduce model size and improve inference speed:
-
-```python
-from oemer_ng.quantization.quantizer import quantize_model_for_inference
-
-# Dynamic quantization (fastest, no calibration needed)
-quantized_model = quantize_model_for_inference(
-    model,
-    quantization_type='dynamic'
-)
-
-# Static quantization (best compression, requires calibration)
-quantized_model = quantize_model_for_inference(
-    model,
-    quantization_type='static',
-    calibration_data=calibration_loader
-)
-```
-
-## GGML Export
-
-Export models for efficient CPU inference on embedded devices:
-
-```python
-from oemer_ng.export.ggml_exporter import GGMLExporter
-
-exporter = GGMLExporter(model)
-
-# FP32 export
-exporter.export('model_fp32.ggml', use_fp16=False)
-
-# FP16 export (smaller size)
-exporter.export('model_fp16.ggml', use_fp16=True)
-```
-
-## Examples
-
-See the `examples/` directory for complete examples:
-
-- `basic_inference.py`: Simple inference pipeline
-- `train_model.py`: Full training example
-- `export_model.py`: Model export and quantization
-
-Run examples:
-
-```bash
-python examples/basic_inference.py
-python examples/train_model.py
-python examples/export_model.py
-```
-
-## Performance Comparison
-
-Compared to the original [oemer](https://github.com/BreezeWhite/oemer) project:
-
-| Metric | oemer (old) | oemer-ng (new) |
-|--------|-------------|----------------|
-| Inference Speed | Baseline | ~3x faster* |
-| Model Size | Baseline | ~4x smaller* |
-| Accuracy | Baseline | Comparable/Better |
-| Embedded Support | ❌ | ✅ (via GGML) |
-| Quantization | ❌ | ✅ (INT8/FP16) |
-
-*With quantization and optimization enabled
-
-## Development
-
-```bash
-# Install development dependencies
-pip install -e ".[dev]"
-
-# Run tests (when available)
-pytest
-
-# Format code
-black src/
-
-# Type checking
-mypy src/
-```
-
-## Roadmap
-
-- [x] Core model architecture
-- [x] Inference pipeline
-- [x] Training utilities
-- [x] Quantization support
-- [x] GGML export
-- [ ] Pretrained models
-- [ ] Data augmentation pipeline
-- [ ] Advanced architectures (Vision Transformers)
-- [ ] Real-time inference optimization
-- [ ] Mobile deployment guides
-- [ ] Web API examples
 
 ## Contributing
 
@@ -222,23 +119,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Acknowledgments
-
-- Inspired by [oemer](https://github.com/BreezeWhite/oemer) by BreezeWhite
-- Built with PyTorch
-- GGML integration for embedded deployment
-
-## Citation
-
-If you use this package in your research, please cite:
-
-```bibtex
-@software{oemer_ng,
-  title = {oemer-ng: Modern Optical Music Recognition},
-  author = {oemer-ng contributors},
-  year = {2024},
-  url = {https://github.com/helium729/oemer-ng}
-}
-```
+MIT License
