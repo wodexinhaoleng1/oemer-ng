@@ -1,0 +1,62 @@
+# Configuration file for OMR-NG models
+
+# Model configuration
+model:
+  num_classes: 128
+  base_channels: 64
+  use_attention: true
+  in_channels: 3
+
+# Training configuration
+training:
+  batch_size: 32
+  learning_rate: 0.001
+  num_epochs: 50
+  optimizer: adam
+  weight_decay: 0.0001
+  
+  # Learning rate scheduler
+  scheduler:
+    type: reduce_on_plateau
+    factor: 0.5
+    patience: 5
+    
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 10
+    
+  # Checkpointing
+  checkpoint_dir: ./checkpoints
+  save_best: true
+  save_interval: 5
+
+# Data configuration
+data:
+  image_size: [512, 512]
+  normalize: true
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+  num_workers: 4
+  pin_memory: true
+
+# Inference configuration
+inference:
+  device: auto  # auto, cpu, cuda
+  batch_size: 8
+  enhance_images: true
+  use_quantization: false
+
+# Export configuration
+export:
+  formats: [ggml, onnx]
+  use_fp16: true
+  quantization_bits: 8  # 4 or 8
+
+# Paths
+paths:
+  data_dir: ./data
+  train_dir: ./data/train
+  val_dir: ./data/val
+  test_dir: ./data/test
+  output_dir: ./output

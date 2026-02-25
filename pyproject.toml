@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oemer-ng"
+version = "0.1.0"
+description = "A modern, fast Optical Music Recognition (OMR) package with GGML support"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "oemer-ng contributors"}
+]
+keywords = ["optical music recognition", "omr", "music", "sheet music", "ggml"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "numpy>=1.21.0",
+    "opencv-python>=4.5.0",
+    "pillow>=9.0.0",
+    "tqdm>=4.60.0",
+    "pyyaml>=5.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+    "mypy>=0.950",
+]
+onnx = [
+    "onnx>=1.12.0",
+    "onnxruntime>=1.12.0",
+]
+training = [
+    "tensorboard>=2.10.0",
+    "wandb>=0.13.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/helium729/oemer-ng"
+Repository = "https://github.com/helium729/oemer-ng"
+Issues = "https://github.com/helium729/oemer-ng/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
