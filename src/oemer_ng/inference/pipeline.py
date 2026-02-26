@@ -202,8 +202,8 @@ class OMRPipeline:
         predictions = []
         
         if num_workers is None:
-            # Default to number of CPUs + 4, capped at 32
-            num_workers = min(32, (os.cpu_count() or 1) + 4)
+            # Default to number of available CPUs, capped at 32
+            num_workers = min(32, os.cpu_count() or 1)
 
         # Process in batches
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
