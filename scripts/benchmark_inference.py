@@ -1,10 +1,10 @@
-
 import time
 import torch
 import numpy as np
 import os
 from PIL import Image
 from oemer_ng.inference.pipeline import OMRPipeline
+
 
 def create_dummy_images(num_images, size=(1024, 1024)):
     print(f"Creating {num_images} dummy images of size {size}...")
@@ -13,6 +13,7 @@ def create_dummy_images(num_images, size=(1024, 1024)):
         img = np.random.randint(0, 256, (*size, 3), dtype=np.uint8)
         images.append(img)
     return images
+
 
 def benchmark_predict_batch():
     num_images = 16
@@ -36,6 +37,7 @@ def benchmark_predict_batch():
     print(f"Total time: {duration:.4f} seconds")
     print(f"Average time per image: {duration/num_images:.4f} seconds")
     print(f"Images per second: {num_images/duration:.4f}")
+
 
 if __name__ == "__main__":
     try:

@@ -46,7 +46,7 @@ def test_preprocess_numpy():
 def test_preprocess_pil():
     """Test preprocessing PIL Image."""
     prep = ImagePreprocessor(target_size=(256, 256))
-    img = Image.new('RGB', (100, 100), color='red')
+    img = Image.new("RGB", (100, 100), color="red")
     result = prep.preprocess(img, return_tensor=True)
     assert isinstance(result, torch.Tensor)
     assert result.shape == (3, 256, 256)
@@ -55,10 +55,7 @@ def test_preprocess_pil():
 def test_batch_preprocess():
     """Test batch preprocessing."""
     prep = ImagePreprocessor(target_size=(128, 128))
-    images = [
-        np.random.randint(0, 255, (50, 50, 3), dtype=np.uint8)
-        for _ in range(4)
-    ]
+    images = [np.random.randint(0, 255, (50, 50, 3), dtype=np.uint8) for _ in range(4)]
     batch = prep.batch_preprocess(images, return_tensor=True)
     assert isinstance(batch, torch.Tensor)
     assert batch.shape == (4, 3, 128, 128)
@@ -79,5 +76,5 @@ def test_enhance_grayscale():
     assert len(enhanced.shape) == 2  # Should remain grayscale
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pytest.main([__file__])

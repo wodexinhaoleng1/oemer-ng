@@ -11,39 +11,35 @@ def main():
     # Example 1: Create a pipeline with default settings
     print("Creating OMR pipeline...")
     pipeline = OMRPipeline(num_classes=128)
-    
+
     # Example 2: Create and save a model
     print("\nCreating and saving model...")
     model = OMRModel(num_classes=128)
     pipeline.model = model
-    pipeline.save_model('demo_model.pth')
+    pipeline.save_model("demo_model.pth")
     print("Model saved to demo_model.pth")
-    
+
     # Example 3: Load a model
     print("\nLoading model...")
-    pipeline_with_model = OMRPipeline(
-        model_path='demo_model.pth',
-        num_classes=128
-    )
+    pipeline_with_model = OMRPipeline(model_path="demo_model.pth", num_classes=128)
     print("Model loaded successfully")
-    
+
     # Example 4: Use quantization for faster inference
     print("\nCreating quantized pipeline...")
     quantized_pipeline = OMRPipeline(
-        model_path='demo_model.pth',
-        use_quantized=True,
-        num_classes=128
+        model_path="demo_model.pth", use_quantized=True, num_classes=128
     )
     print("Quantized pipeline created")
-    
+
     # Example 5: Mock inference (since we don't have a real image)
     print("\nRunning mock inference...")
     dummy_image = torch.randn(1, 3, 512, 512)
     result = pipeline.predict(dummy_image, enhance=False, return_probabilities=True)
 
     import numpy as np
-    prediction = result['prediction']
-    confidence = result['confidence']
+
+    prediction = result["prediction"]
+    confidence = result["confidence"]
 
     if isinstance(prediction, np.ndarray):
         print(f"Prediction shape: {prediction.shape}")
@@ -51,9 +47,9 @@ def main():
     else:
         print(f"Prediction: {prediction}")
         print(f"Confidence: {confidence:.2%}")
-    
+
     print("\nExample completed successfully!")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
