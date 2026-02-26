@@ -199,6 +199,8 @@ class OMRPipeline:
         Returns:
             List of predicted class indices
         """
+        if not images:
+            return []
         predictions = []
         
         if num_workers is None:
