@@ -217,7 +217,7 @@ class OMRPipeline:
             # ImagePreprocessor in the future, it must remain thread-safe or this parallel
             # preprocessing implementation must be revisited.
             preprocess_fn = lambda img: self.preprocess_image(img, enhance=enhance)
-            tensors_iter = executor.map(preprocess_fn, images)
+            tensors_iter = executor.map(preprocess_fn, images, chunksize=batch_size)
             
             for i in range(0, len(images), batch_size):
                 # Collect preprocessed tensors for the current batch
