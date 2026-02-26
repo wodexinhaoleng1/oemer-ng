@@ -209,7 +209,7 @@ class Trainer:
         Args:
             checkpoint_path: Path to checkpoint file
         """
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=True)
         
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])

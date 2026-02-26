@@ -1,5 +1,7 @@
 # oemer-ng
 
+[![CI](https://github.com/helium729/oemer-ng/actions/workflows/ci.yml/badge.svg)](https://github.com/helium729/oemer-ng/actions/workflows/ci.yml)
+
 A modern, fast Optical Music Recognition (OMR) package. This is a PyTorch port of the original [oemer](https://github.com/BreezeWhite/oemer) project.
 
 ## Features

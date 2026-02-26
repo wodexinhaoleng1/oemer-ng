@@ -4,6 +4,8 @@ OMR Inference Pipeline.
 
 import torch
 import numpy as np
+import os
+import concurrent.futures
 from pathlib import Path
 from typing import Union, List, Dict, Optional
 from PIL import Image
@@ -74,7 +76,7 @@ class OMRPipeline:
         Args:
             model_path: Path to model checkpoint
         """
-        checkpoint = torch.load(model_path, map_location=self.device)
+        checkpoint = torch.load(model_path, map_location=self.device, weights_only=True)
         
         # Handle different checkpoint formats
         if isinstance(checkpoint, dict):
@@ -189,7 +191,8 @@ class OMRPipeline:
         self,
         images: List[Union[str, np.ndarray, Image.Image]],
         enhance: bool = True,
-        batch_size: int = 8
+        batch_size: int = 8,
+        num_workers: Optional[int] = None
     ) -> List[int]:
         """
         Run inference on a batch of images.
@@ -198,28 +201,53 @@ class OMRPipeline:
             images: List of input images
             enhance: Whether to apply preprocessing enhancement
             batch_size: Batch size for inference
+            num_workers: Number of workers for parallel preprocessing.
+                If None, defaults to min(32, number_of_cpus + 4).
             
         Returns:
             List of predicted class indices
         """
+        if not images:
+            return []
         predictions = []
         
+        if num_workers is None:
+            # Default to number of available CPUs, capped at 32
+            num_workers = min(32, os.cpu_count() or 1)
+
         # Process in batches
-        for i in range(0, len(images), batch_size):
-            batch = images[i:i + batch_size]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+            # Parallelize preprocessing across all images.
+            # executor.map submits all tasks and returns an iterator that yields results in order.
+            # This naturally overlaps preprocessing with inference and parallelizes within batches
+            # without nested executor calls that could lead to deadlocks.
+            # NOTE: self.preprocess_image (and the underlying ImagePreprocessor) is called from
+            # multiple threads. This relies on ImagePreprocessor being effectively stateless /
+            # read-only and therefore thread-safe. If mutable state or caching is added to
+            # ImagePreprocessor in the future, it must remain thread-safe or this parallel
+            # preprocessing implementation must be revisited.
+            preprocess_fn = lambda img: self.preprocess_image(img, enhance=enhance)
+            tensors_iter = executor.map(preprocess_fn, images, chunksize=batch_size)
             
-            # Preprocess batch
-            tensors = [self.preprocess_image(img, enhance=enhance) for img in batch]
-            batch_tensor = torch.cat(tensors, dim=0).to(self.device)
-            
-            # Inference
-            output = self.model(batch_tensor)
-            if output.dim() == 4:
-                batch_predictions = torch.argmax(output, dim=1).cpu().numpy()
-                predictions.extend([p for p in batch_predictions])
-            else:
-                batch_predictions = torch.argmax(output, dim=1).cpu().tolist()
-                predictions.extend(batch_predictions)
+            for i in range(0, len(images), batch_size):
+                # Collect preprocessed tensors for the current batch
+                batch_tensors = []
+                for _ in range(min(batch_size, len(images) - i)):
+                    batch_tensors.append(next(tensors_iter))
+
+                if not batch_tensors:
+                    break
+
+                batch_tensor = torch.cat(batch_tensors, dim=0).to(self.device)
+
+                # Inference
+                output = self.model(batch_tensor)
+                if output.dim() == 4:
+                    batch_predictions = torch.argmax(output, dim=1).cpu().numpy()
+                    predictions.extend([p for p in batch_predictions])
+                else:
+                    batch_predictions = torch.argmax(output, dim=1).cpu().tolist()
+                    predictions.extend(batch_predictions)
         
         return predictions
     
