@@ -194,7 +194,7 @@ class OMRPipeline:
             enhance: Whether to apply preprocessing enhancement
             batch_size: Batch size for inference
             num_workers: Number of workers for parallel preprocessing.
-                If None, uses the number of available CPUs.
+                If None, defaults to min(32, number_of_cpus + 4).
             
         Returns:
             List of predicted class indices
