@@ -218,10 +218,7 @@ class OMRPipeline:
                 # Collect preprocessed tensors for the current batch
                 batch_tensors = []
                 for _ in range(min(batch_size, len(images) - i)):
-                    try:
-                        batch_tensors.append(next(tensors_iter))
-                    except StopIteration:
-                        break
+                    batch_tensors.append(next(tensors_iter))
 
                 if not batch_tensors:
                     break
