@@ -4,7 +4,6 @@ Dataset utilities for OMR training.
 
 import os
 import random
-import glob
 from pathlib import Path
 from typing import Optional, Callable, List, Tuple, Dict, Any
 
