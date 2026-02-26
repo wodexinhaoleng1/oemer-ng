@@ -132,11 +132,9 @@ dmypy.json
 # Model files
 *.pth
 *.pt
-*.onnx
 *.ggml
 *.bin
 checkpoints/
-models/
 weights/
 
 # Data
