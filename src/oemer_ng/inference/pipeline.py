@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Union, List, Dict, Optional
 from PIL import Image
 
-from ..models.omr_model import OMRModel
+try:
+    from ..models.omr_model import OMRModel
+except ImportError:
+    OMRModel = None
 from ..utils.preprocessing import ImagePreprocessor, enhance_sheet_music
 
 
@@ -45,6 +48,11 @@ class OMRPipeline:
         self.preprocessor = ImagePreprocessor()
         
         # Initialize model
+        if OMRModel is None:
+            raise ImportError(
+                "OMRModel is not available. "
+                "Please install the required model module or create the models directory."
+            )
         self.model = OMRModel(num_classes=num_classes)
         
         # Load weights if provided
