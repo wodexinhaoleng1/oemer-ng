@@ -30,6 +30,7 @@ class OMRPipeline:
         device: Optional[str] = None,
         use_quantized: bool = False,
         num_classes: int = 128,
+        mode: str = "classification",
     ):
         """
         Initialize OMR pipeline.
@@ -39,6 +40,7 @@ class OMRPipeline:
             device: Device to run inference on ('cpu', 'cuda', or None for auto)
             use_quantized: Whether to use quantized model
             num_classes: Number of output classes
+            mode: "classification" or "segmentation"
         """
         # Set device
         if device is None:
@@ -55,7 +57,7 @@ class OMRPipeline:
                 "OMRModel is not available. "
                 "Please install the required model module or create the models directory."
             )
-        self.model = OMRModel(num_classes=num_classes)
+        self.model = OMRModel(num_classes=num_classes, mode=mode)
 
         # Load weights if provided
         if model_path is not None:
@@ -64,6 +66,9 @@ class OMRPipeline:
         # Move to device
         self.model = self.model.to(self.device)
         self.model.eval()
+
+        # Store mode for prediction handling
+        self.mode = mode
 
         # Apply quantization if requested
         if use_quantized:
@@ -174,11 +179,18 @@ class OMRPipeline:
             confidence = probabilities[0, prediction].item()
 
         if return_probabilities:
-            return {
-                "prediction": prediction,
-                "probabilities": probabilities.cpu().numpy()[0],
-                "confidence": confidence,
-            }
+            if output.dim() == 4:
+                return {
+                    "prediction": prediction,
+                    "probabilities": probabilities.cpu().numpy()[0],
+                    "confidence": confidence,
+                }
+            else:
+                return {
+                    "prediction": prediction,
+                    "probabilities": probabilities.cpu().numpy()[0],
+                    "confidence": confidence,
+                }
         else:
             return prediction
 
