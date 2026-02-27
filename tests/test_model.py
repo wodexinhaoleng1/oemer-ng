@@ -64,5 +64,5 @@ def test_omr_model_custom_channels():
     assert out.shape == (1, 64)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pytest.main([__file__])

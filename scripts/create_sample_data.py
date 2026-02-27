@@ -10,6 +10,7 @@ import numpy as np
 import cv2
 from pathlib import Path
 
+
 def create_cvc_sample(root_dir):
     """
     Create sample CvcMuscima dataset.
@@ -41,18 +42,18 @@ def create_cvc_sample(root_dir):
 
         # Staff (gt): Horizontal lines
         staff = np.zeros((h, w), dtype=np.uint8)
-        for y in range(100, h-100, 20):
+        for y in range(100, h - 100, 20):
             cv2.line(staff, (0, y), (w, y), 255, 2)
 
         # Symbol: Random circles/rectangles
         symbol = np.zeros((h, w), dtype=np.uint8)
         for _ in range(10):
-            x = random.randint(50, w-50)
-            y = random.randint(50, h-50)
+            x = random.randint(50, w - 50)
+            y = random.randint(50, h - 50)
             if random.random() > 0.5:
                 cv2.circle(symbol, (x, y), 20, 255, -1)
             else:
-                cv2.rectangle(symbol, (x-20, y-20), (x+20, y+20), 255, -1)
+                cv2.rectangle(symbol, (x - 20, y - 20), (x + 20, y + 20), 255, -1)
 
         # Image: Combined + Noise
         # Inverted logic: white background, black ink usually.
@@ -100,24 +101,24 @@ def create_ds2_sample(root_dir):
         seg = np.zeros((h, w), dtype=np.uint8)
 
         # Staff (1)
-        for y in range(100, h-100, 20):
+        for y in range(100, h - 100, 20):
             cv2.line(seg, (0, y), (w, y), 1, 2)
 
         # Symbol (2)
         for _ in range(10):
-            x = random.randint(50, w-50)
-            y = random.randint(50, h-50)
+            x = random.randint(50, w - 50)
+            y = random.randint(50, h - 50)
             cv2.circle(seg, (x, y), 20, 2, -1)
 
         # Other (3)
         for _ in range(5):
-            x = random.randint(50, w-50)
-            y = random.randint(50, h-50)
-            cv2.rectangle(seg, (x-10, y-10), (x+10, y+10), 3, -1)
+            x = random.randint(50, w - 50)
+            y = random.randint(50, h - 50)
+            cv2.rectangle(seg, (x - 10, y - 10), (x + 10, y + 10), 3, -1)
 
         # Image based on mask
         image = np.ones((h, w), dtype=np.uint8) * 255
-        image[seg > 0] = 0 # Ink is black
+        image[seg > 0] = 0  # Ink is black
 
         # Save
         # Image is RGB usually
@@ -137,6 +138,7 @@ def main():
     print("\nSample data generated successfully!")
     print(f"CvcMuscima sample: {data_dir / 'sample_cvc'}")
     print(f"DeepScores sample: {data_dir / 'sample_ds2'}")
+
 
 if __name__ == "__main__":
     main()

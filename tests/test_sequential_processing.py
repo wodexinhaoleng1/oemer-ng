@@ -10,7 +10,7 @@ import numpy as np
 
 # Add src directory to Python path
 # This is a common pattern in tests to ensure the source code is importable
-src_path = Path(__file__).resolve().parent.parent / 'src'
+src_path = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
 from oemer_ng.utils.preprocessing import ImagePreprocessor
@@ -24,10 +24,10 @@ def main():
     print("=" * 70)
 
     # --- Configuration ---
-    INPUT_IMAGE = 'qcwq.png'
-    ONNX_MODEL_PATH = 'src/resize_model/best.onnx'
-    FINAL_OUTPUT = 'qcwq_final_processed.png'
-    
+    INPUT_IMAGE = "qcwq.png"
+    ONNX_MODEL_PATH = "src/resize_model/best.onnx"
+    FINAL_OUTPUT = "qcwq_final_processed.png"
+
     # Preprocessing parameters
     TARGET_SIZE = (512, 512)
     ONNX_IMAGE_SIZE = 640
@@ -37,7 +37,7 @@ def main():
         if not Path(INPUT_IMAGE).exists():
             print(f"\n❌ Error: Input image not found: {INPUT_IMAGE}")
             return
-        
+
         if not Path(ONNX_MODEL_PATH).exists():
             print(f"\n❌ Error: ONNX model not found: {ONNX_MODEL_PATH}")
             return
@@ -49,14 +49,14 @@ def main():
         print("步骤 1/2: 初始化 ImagePreprocessor")
         print(f"{'='*70}")
         print(f"\n[1.1] 创建集成的预处理器...")
-        
+
         preprocessor = ImagePreprocessor(
             target_size=TARGET_SIZE,
             normalize=True,
             onnx_model_path=ONNX_MODEL_PATH,
-            onnx_image_size=ONNX_IMAGE_SIZE
+            onnx_image_size=ONNX_IMAGE_SIZE,
         )
-        
+
         print(f"      - 目标尺寸: {TARGET_SIZE}")
         print(f"      - ONNX 模型: {ONNX_MODEL_PATH}")
         print("      - 预处理器创建成功.")
@@ -69,14 +69,14 @@ def main():
         print(f"{'='*70}")
 
         print(f"\n[2.1] 从文件加载并处理图像: {INPUT_IMAGE}")
-        
+
         # The preprocess method now handles everything:
         # 1. Loads the image.
         # 2. Cleans it using the ONNX model.
         # 3. Resizes and pads it.
         # 4. Normalizes it.
         preprocessed_image = preprocessor.preprocess(INPUT_IMAGE, return_tensor=False)
-        
+
         print(f"      - 预处理完成!")
         print(f"      - 输出形状: {preprocessed_image.shape}")
         print(f"      - 输出类型: {preprocessed_image.dtype}")
@@ -94,13 +94,13 @@ def main():
             # Assuming mean=0.5, std=0.5 for simple reversal. For exact reversal, use preprocessor.mean/std.
             mean = np.array([0.485, 0.456, 0.406])
             std = np.array([0.229, 0.224, 0.225])
-            
+
             # Check if image is in C, H, W format (tensor format) or H, W, C format (numpy format)
             if preprocessed_image.shape[0] == 3:  # C, H, W format
                 img_to_save = np.transpose(preprocessed_image, (1, 2, 0))
             else:  # H, W, C format
                 img_to_save = preprocessed_image
-            
+
             # Denormalize
             img_to_save = (img_to_save * std) + mean
             img_to_save = (img_to_save * 255.0).clip(0, 255).astype(np.uint8)
@@ -109,7 +109,7 @@ def main():
 
         cv2.imwrite(FINAL_OUTPUT, cv2.cvtColor(img_to_save, cv2.COLOR_RGB2BGR))
         print(f"      - 已保存为: {FINAL_OUTPUT}")
-        
+
         # ============================================================
         # Summary
         # ============================================================
@@ -127,7 +127,9 @@ def main():
     except Exception as e:
         print(f"\n❌ 严重错误: {e}")
         import traceback
+
         traceback.print_exc()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

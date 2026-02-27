@@ -69,7 +69,7 @@ class OMRModel(nn.Module):
         num_classes: int = 128,
         n_channels: int = 3,
         base_channels: int = 64,
-        use_attention: bool = True
+        use_attention: bool = True,
     ):
         """
         Initialize OMR model.

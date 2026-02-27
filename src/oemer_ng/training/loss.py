@@ -39,12 +39,16 @@ class FocalTverskyLoss(nn.Module):
         fn = (targets_flat * (1 - probs_flat)).sum()
         fp = ((1 - targets_flat) * probs_flat).sum()
 
-        tversky_index = (tp + self.smooth) / (tp + self.alpha * fn + (1 - self.alpha) * fp + self.smooth)
+        tversky_index = (tp + self.smooth) / (
+            tp + self.alpha * fn + (1 - self.alpha) * fp + self.smooth
+        )
         tversky_loss = 1 - tversky_index
         t_loss = torch.pow(tversky_loss, self.gamma)
 
         # Focal Loss
         # sigmoid_focal_loss takes logits
-        f_loss = sigmoid_focal_loss(inputs_flat, targets_flat, alpha=0.25, gamma=2.0, reduction='mean')
+        f_loss = sigmoid_focal_loss(
+            inputs_flat, targets_flat, alpha=0.25, gamma=2.0, reduction="mean"
+        )
 
         return self.fw * f_loss + (1 - self.fw) * t_loss

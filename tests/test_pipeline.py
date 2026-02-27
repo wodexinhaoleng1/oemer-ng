@@ -20,12 +20,12 @@ def test_pipeline_initialization():
 def test_pipeline_save_load():
     """Test model save and load."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        model_path = os.path.join(tmpdir, 'test_model.pth')
-        
+        model_path = os.path.join(tmpdir, "test_model.pth")
+
         # Create and save
         pipeline = OMRPipeline(num_classes=64)
         pipeline.save_model(model_path)
-        
+
         # Load
         pipeline2 = OMRPipeline(model_path=model_path, num_classes=64)
         assert pipeline2.model is not None
@@ -36,10 +36,10 @@ def test_predict_tensor():
     pipeline = OMRPipeline(num_classes=128)
     img = torch.randn(1, 3, 512, 512)
     result = pipeline.predict(img, enhance=False, return_probabilities=True)
-    assert 'prediction' in result
-    assert 'confidence' in result
-    assert 'probabilities' in result
-    assert 0 <= result['prediction'] < 128
+    assert "prediction" in result
+    assert "confidence" in result
+    assert "probabilities" in result
+    assert 0 <= result["prediction"] < 128
 
 
 def test_predict_simple():
@@ -61,5 +61,5 @@ def test_quantization():
     assert isinstance(result, int)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pytest.main([__file__])
