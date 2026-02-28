@@ -110,6 +110,10 @@ class OMRModel(nn.Module):
         self.num_classes = num_classes
         self.n_channels = n_channels
         self.use_attention = use_attention
+        if mode not in ("classification", "segmentation"):
+            raise ValueError(
+                f"Invalid mode '{mode}'. Expected 'classification' or 'segmentation'."
+            )
         self.mode = mode
 
         # Encoder
