@@ -179,20 +179,12 @@ class OMRPipeline:
             confidence = probabilities[0, prediction].item()
 
         if return_probabilities:
-            if output.dim() == 4:
-                return {
-                    "prediction": prediction,
-                    "probabilities": probabilities.cpu().numpy()[0],
-                    "confidence": confidence,
-                }
-            else:
-                return {
-                    "prediction": prediction,
-                    "probabilities": probabilities.cpu().numpy()[0],
-                    "confidence": confidence,
-                }
-        else:
-            return prediction
+            return {
+                "prediction": prediction,
+                "probabilities": probabilities.cpu().numpy()[0],
+                "confidence": confidence,
+            }
+        return prediction
 
     @torch.no_grad()
     def predict_batch(
