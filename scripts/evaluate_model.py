@@ -26,7 +26,9 @@ def calculate_iou(pred, target, num_classes):
         union = (pred_cls | target_cls).sum().item()
 
         if union == 0:
-            ious.append(1.0)  # Class not present
+            # Class not present in both prediction and ground truth: IoU is undefined.
+            # Use NaN so downstream aggregation can explicitly handle or skip this class.
+            ious.append(float("nan"))
         else:
             ious.append(intersection / union)
 
