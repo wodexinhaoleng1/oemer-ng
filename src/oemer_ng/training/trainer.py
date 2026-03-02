@@ -47,7 +47,7 @@ class Trainer:
             log_interval: Logging interval in batches
             use_amp: Whether to use Automatic Mixed Precision (AMP)
             accumulation_steps: Number of steps for gradient accumulation
-            metric_fn: Custom metric function for OMR (e.g., Symbol Error Rate). 
+            metric_fn: Custom metric function for OMR (e.g., Symbol Error Rate).
                        Should take (output, target) and return a dict of metrics.
         """
         # Set device
@@ -80,7 +80,7 @@ class Trainer:
         self.use_amp = use_amp and self.device.type == "cuda"
         self.scaler = torch.amp.GradScaler(device=self.device.type, enabled=self.use_amp)
         self.accumulation_steps = max(1, accumulation_steps)
-        
+
         # Custom Metrics (OMR specific like SER, Edit Distance)
         self.metric_fn = metric_fn
 
@@ -94,14 +94,14 @@ class Trainer:
         """Helper to compute metrics based on metric_fn or fallback to simple accuracy."""
         if self.metric_fn is not None:
             return self.metric_fn(output, target)
-        
+
         # Fallback for simple classification/sequence (fixes the dim=1 bug)
         pred = output.argmax(dim=-1)
         if target.dim() > pred.dim():
             target_indices = target.argmax(dim=-1)
         else:
             target_indices = target
-        
+
         correct = pred.eq(target_indices).sum().item()
         total = target_indices.numel()
         return {"accuracy": 100.0 * correct / max(total, 1), "correct": correct, "total": total}
@@ -116,7 +116,7 @@ class Trainer:
         self.model.train()
         total_loss = 0
         epoch_metrics = {}
-        
+
         # Variables for default accuracy fallback
         total_correct = 0
         total_samples = 0
@@ -136,7 +136,9 @@ class Trainer:
 
             # Check for NaN loss
             if torch.isnan(loss):
-                print(f"\nWarning: NaN loss detected at epoch {self.current_epoch + 1}, batch {batch_idx}")
+                print(
+                    f"\nWarning: NaN loss detected at epoch {self.current_epoch + 1}, batch {batch_idx}"
+                )
                 print("Skipping this batch...")
                 self.optimizer.zero_grad()
                 continue
@@ -145,7 +147,9 @@ class Trainer:
             self.scaler.scale(loss).backward()
 
             # Gradient accumulation step
-            if ((batch_idx + 1) % self.accumulation_steps == 0) or ((batch_idx + 1) == len(self.train_loader)):
+            if ((batch_idx + 1) % self.accumulation_steps == 0) or (
+                (batch_idx + 1) == len(self.train_loader)
+            ):
                 # Unscale before gradient clipping
                 self.scaler.unscale_(self.optimizer)
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
@@ -173,14 +177,14 @@ class Trainer:
             if batch_idx % self.log_interval == 0:
                 avg_loss = total_loss / (batch_idx + 1)
                 postfix_dict = {"loss": f"{avg_loss:.4f}"}
-                
+
                 if self.metric_fn is not None:
                     for k in epoch_metrics:
                         postfix_dict[k] = f"{epoch_metrics[k] / (batch_idx + 1):.4f}"
                 else:
                     acc = 100.0 * total_correct / max(total_samples, 1)
                     postfix_dict["acc"] = f"{acc:.2f}%"
-                    
+
                 pbar.set_postfix(postfix_dict)
 
         # Finalize epoch metrics
@@ -240,14 +244,14 @@ class Trainer:
     def save_checkpoint(self, filename: str = "checkpoint.pth", is_best: bool = False):
         """Save model checkpoint."""
         checkpoint = {
-            "epoch": self.current_epoch + 1, # Save NEXT epoch to resume from
+            "epoch": self.current_epoch + 1,  # Save NEXT epoch to resume from
             "global_step": self.global_step,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "best_val_loss": self.best_val_loss,
             "history": self.history,
         }
-        
+
         # Only save scaler state if AMP is enabled
         if self.use_amp:
             checkpoint["scaler_state_dict"] = self.scaler.state_dict()
@@ -265,7 +269,7 @@ class Trainer:
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        
+
         # Load scaler state if available and AMP is enabled
         if "scaler_state_dict" in checkpoint:
             if self.use_amp:
@@ -275,7 +279,7 @@ class Trainer:
                 print(f"  Warning: Checkpoint has scaler state but AMP is disabled")
         elif self.use_amp:
             print(f"  Warning: AMP enabled but no scaler state in checkpoint (starting fresh)")
-            
+
         self.current_epoch = checkpoint["epoch"]
         self.global_step = checkpoint["global_step"]
         self.best_val_loss = checkpoint["best_val_loss"]
@@ -300,7 +304,7 @@ class Trainer:
         """
         start_time = time.time()
         patience_counter = 0
-        
+
         # FIXED: target_epochs calculates exactly when to stop, enabling smooth resuming
         target_epochs = self.current_epoch + num_epochs
 
@@ -310,12 +314,13 @@ class Trainer:
             # Train
             train_metrics = self.train_epoch()
             self.history["train_loss"].append(train_metrics["loss"])
-            
+
             # Dynamically save metrics to history
             for k, v in train_metrics.items():
                 if k != "loss":
                     hist_key = f"train_{k}"
-                    if hist_key not in self.history: self.history[hist_key] = []
+                    if hist_key not in self.history:
+                        self.history[hist_key] = []
                     self.history[hist_key].append(v)
 
             print(f"\nEpoch {epoch + 1}/{target_epochs}")
@@ -329,12 +334,13 @@ class Trainer:
             if self.val_loader is not None:
                 val_metrics = self.validate()
                 self.history["val_loss"].append(val_metrics["loss"])
-                
+
                 val_log = f"Val Loss: {val_metrics['loss']:.4f}"
                 for k, v in val_metrics.items():
                     if k != "loss":
                         hist_key = f"val_{k}"
-                        if hist_key not in self.history: self.history[hist_key] = []
+                        if hist_key not in self.history:
+                            self.history[hist_key] = []
                         self.history[hist_key].append(v)
                         val_log += f", Val {k.capitalize()}: {v:.4f}"
                 print(val_log)
@@ -360,7 +366,9 @@ class Trainer:
             # Learning rate scheduling
             if scheduler is not None:
                 if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-                    scheduler.step(val_metrics["loss"] if self.val_loader else train_metrics["loss"])
+                    scheduler.step(
+                        val_metrics["loss"] if self.val_loader else train_metrics["loss"]
+                    )
                 else:
                     scheduler.step()
 
