@@ -292,11 +292,11 @@ class OMRModel(nn.Module):
         use_attention: bool = True,
         mode: str = "classification",
     ):
-        super().__init__()
         if mode not in ("classification", "segmentation"):
             raise ValueError(
                 f"Invalid mode '{mode}'. Expected 'classification' or 'segmentation'."
             )
+        super().__init__()
 
         self.num_classes = num_classes
         self.n_channels = n_channels

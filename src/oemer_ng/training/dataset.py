@@ -360,8 +360,7 @@ class NoteHeadDataset(OMRDataset):
         return self.samples_per_epoch
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        if idx >= len(self.image_files):
-            idx = random.randint(0, len(self.image_files) - 1)
+        idx = idx % len(self.image_files)
 
         img_path = self.image_files[idx]
         stem = img_path.stem
