@@ -16,7 +16,7 @@ def test_focal_tversky_loss_initialization():
     assert loss_fn.alpha == 0.7
     assert loss_fn.smooth == 1.0
     assert loss_fn.gamma == 0.75
-    assert loss_fn.tp_weight == 0.4
+    assert loss_fn.tp_weight == 1.0
 
     # Custom parameters
     loss_fn = FocalTverskyLoss(fw=0.5, alpha=0.5, smooth=2.0, gamma=1.0, tp_weight=0.8)

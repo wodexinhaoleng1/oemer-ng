@@ -14,7 +14,7 @@ class FocalTverskyLoss(nn.Module):
     Combination of Focal Loss and Tversky Loss.
     """
 
-    def __init__(self, fw=0.7, alpha=0.7, smooth=1.0, gamma=0.75, tp_weight=0.4):
+    def __init__(self, fw=0.7, alpha=0.7, smooth=1.0, gamma=0.75, tp_weight=1.0):
         super(FocalTverskyLoss, self).__init__()
         self.fw = fw
         self.alpha = alpha
@@ -35,9 +35,10 @@ class FocalTverskyLoss(nn.Module):
         probs = torch.sigmoid(inputs)
 
         # Flatten spatial dimensions: (B, C, H, W) -> (B, C, H*W) -> (B, C*H*W)
-        inputs_flat = inputs.view(inputs.size(0), -1)
-        targets_flat = targets.view(targets.size(0), -1)
-        probs_flat = probs.view(probs.size(0), -1)
+        # Cast to float32 to prevent overflow under AMP (float16 has limited range)
+        inputs_flat = inputs.float().view(inputs.size(0), -1)
+        targets_flat = targets.float().view(targets.size(0), -1)
+        probs_flat = probs.float().view(probs.size(0), -1)
 
         # Tversky Loss per batch
         tversky_losses = []

@@ -356,6 +356,14 @@ class Trainer:
                 # Save checkpoint
                 self.save_checkpoint(f"checkpoint_epoch_{epoch + 1}.pth", is_best)
 
+                # Learning rate scheduling (step before early-stopping break so scheduler
+                # always receives the latest metric regardless of stopping condition)
+                if scheduler is not None:
+                    if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+                        scheduler.step(val_metrics["loss"])
+                    else:
+                        scheduler.step()
+
                 # Early stopping
                 if early_stopping_patience and patience_counter >= early_stopping_patience:
                     print(f"\nEarly stopping triggered after {epoch + 1} epochs")
@@ -363,14 +371,12 @@ class Trainer:
             else:
                 self.save_checkpoint(f"checkpoint_epoch_{epoch + 1}.pth")
 
-            # Learning rate scheduling
-            if scheduler is not None:
-                if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-                    scheduler.step(
-                        val_metrics["loss"] if self.val_loader else train_metrics["loss"]
-                    )
-                else:
-                    scheduler.step()
+                # Learning rate scheduling with training loss when no validation set
+                if scheduler is not None:
+                    if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+                        scheduler.step(train_metrics["loss"])
+                    else:
+                        scheduler.step()
 
             print(f"Learning rate: {self.optimizer.param_groups[0]['lr']:.6f}")
 
