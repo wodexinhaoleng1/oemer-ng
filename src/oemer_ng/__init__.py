@@ -9,6 +9,13 @@ This package provides state-of-the-art optical music recognition with support fo
 
 __version__ = "0.1.0"
 
-from .inference.pipeline import OMRPipeline
+from .inference.pipeline import OMRPipeline, NoteHeadPipeline, TwoStagePipeline
+from .models.omr_model import NoteHeadModel
 
-__all__ = ["OMRPipeline", "__version__"]
+__all__ = [
+    "OMRPipeline",
+    "NoteHeadPipeline",
+    "TwoStagePipeline",
+    "NoteHeadModel",
+    "__version__",
+]
