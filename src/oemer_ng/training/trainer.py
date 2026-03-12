@@ -124,8 +124,16 @@ class Trainer:
         pbar = tqdm(self.train_loader, desc=f"Epoch {self.current_epoch + 1}")
         self.optimizer.zero_grad()
 
+        # Save initial model state to restore if NaN corrupts weights
+        _last_good_state = {k: v.clone() for k, v in self.model.state_dict().items()}
+
         for batch_idx, (data, target) in enumerate(pbar):
             data, target = data.to(self.device), target.to(self.device)
+
+            # Skip batches with corrupt input data
+            if torch.isnan(data).any() or torch.isinf(data).any():
+                print(f"\nWarning: NaN/Inf in input data at epoch {self.current_epoch + 1}, batch {batch_idx}, skipping...")
+                continue
 
             # Forward pass with AMP
             with torch.amp.autocast(device_type=self.device.type, enabled=self.use_amp):
@@ -134,12 +142,13 @@ class Trainer:
                 # Normalize loss for accumulation
                 loss = loss / self.accumulation_steps
 
-            # Check for NaN loss
-            if torch.isnan(loss):
+            # Check for NaN/Inf loss — restore last good weights to prevent corruption
+            if not torch.isfinite(loss):
                 print(
-                    f"\nWarning: NaN loss detected at epoch {self.current_epoch + 1}, batch {batch_idx}"
+                    f"\nWarning: NaN/Inf loss detected at epoch {self.current_epoch + 1}, batch {batch_idx}"
                 )
-                print("Skipping this batch...")
+                print("Restoring last good weights and skipping batch...")
+                self.model.load_state_dict(_last_good_state)
                 self.optimizer.zero_grad()
                 continue
 
@@ -158,6 +167,8 @@ class Trainer:
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 self.optimizer.zero_grad()
+                # Save good state after successful update
+                _last_good_state = {k: v.clone() for k, v in self.model.state_dict().items()}
 
             # Statistics (multiply back by accumulation_steps for accurate logging)
             actual_loss = loss.item() * self.accumulation_steps

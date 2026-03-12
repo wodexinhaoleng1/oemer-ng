@@ -31,6 +31,9 @@ class OMRPipeline:
         use_quantized: bool = False,
         num_classes: int = 128,
         mode: str = "classification",
+        n_channels: int = 3,
+        mean: Optional[List[float]] = None,
+        std: Optional[List[float]] = None,
     ):
         """
         Initialize OMR pipeline.
@@ -41,6 +44,9 @@ class OMRPipeline:
             use_quantized: Whether to use quantized model
             num_classes: Number of output classes
             mode: "classification" or "segmentation"
+            n_channels: Number of input channels (1 for grayscale, 3 for RGB)
+            mean: Normalization mean, e.g. [0.5] for grayscale or [0.485,0.456,0.406] for RGB
+            std: Normalization std, e.g. [0.5] for grayscale or [0.229,0.224,0.225] for RGB
         """
         # Set device
         if device is None:
@@ -48,8 +54,19 @@ class OMRPipeline:
         else:
             self.device = torch.device(device)
 
-        # Initialize preprocessor
-        self.preprocessor = ImagePreprocessor()
+        # Store channel config
+        self.n_channels = n_channels
+
+        # Set normalization params (must match training)
+        if mean is None:
+            mean = [0.5] if n_channels == 1 else [0.485, 0.456, 0.406]
+        if std is None:
+            std = [0.5] if n_channels == 1 else [0.229, 0.224, 0.225]
+        self._norm_mean = np.array(mean, dtype=np.float32)
+        self._norm_std = np.array(std, dtype=np.float32)
+
+        # Initialize preprocessor (normalization overridden below)
+        self.preprocessor = ImagePreprocessor(normalize=False)
 
         # Initialize model
         if OMRModel is None:
@@ -57,7 +74,7 @@ class OMRPipeline:
                 "OMRModel is not available. "
                 "Please install the required model module or create the models directory."
             )
-        self.model = OMRModel(num_classes=num_classes, mode=mode)
+        self.model = OMRModel(n_channels=n_channels, num_classes=num_classes, mode=mode)
 
         # Load weights if provided
         if model_path is not None:
@@ -129,8 +146,17 @@ class OMRPipeline:
         if enhance:
             img = enhance_sheet_music(img)
 
-        # Preprocess
+        # Preprocess (resize only, normalization handled below)
         tensor = self.preprocessor.preprocess(img, return_tensor=True)
+
+        # Convert to grayscale if model expects 1 channel: (3,H,W) -> (1,H,W)
+        if self.n_channels == 1 and tensor.shape[0] == 3:
+            tensor = 0.299 * tensor[0:1] + 0.587 * tensor[1:2] + 0.114 * tensor[2:3]
+
+        # Apply correct normalization (matching training)
+        mean = torch.tensor(self._norm_mean, dtype=torch.float32).view(-1, 1, 1)
+        std = torch.tensor(self._norm_std, dtype=torch.float32).view(-1, 1, 1)
+        tensor = (tensor - mean) / std
 
         # Add batch dimension
         if len(tensor.shape) == 3:

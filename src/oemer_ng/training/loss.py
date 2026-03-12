@@ -31,19 +31,16 @@ class FocalTverskyLoss(nn.Module):
             inputs.shape == targets.shape
         ), f"Shape mismatch: inputs {inputs.shape} vs targets {targets.shape}"
 
-        # Calculate Probabilities
-        probs = torch.sigmoid(inputs)
-
-        # Flatten spatial dimensions: (B, C, H, W) -> (B, C, H*W) -> (B, C*H*W)
-        # Cast to float32 to prevent overflow under AMP (float16 has limited range)
+        # Flatten spatial dimensions: (B, C, H, W) -> (B, C*H*W)
+        # Cast to float32 FIRST to prevent float16 overflow under AMP
         inputs_flat = inputs.float().view(inputs.size(0), -1)
         targets_flat = targets.float().view(targets.size(0), -1)
-        probs_flat = probs.float().view(probs.size(0), -1)
+        # Compute sigmoid after float32 cast for numerical stability
+        probs_flat = torch.sigmoid(inputs_flat)
 
         # Tversky Loss per batch
         tversky_losses = []
         for b in range(inputs.size(0)):
-            inputs_b = inputs_flat[b]
             targets_b = targets_flat[b]
             probs_b = probs_flat[b]
 
@@ -51,12 +48,13 @@ class FocalTverskyLoss(nn.Module):
             fn = (targets_b * (1 - probs_b)).sum()
             fp = ((1 - targets_b) * probs_b).sum()
 
-            # Numerical stability: smooth term prevents division by zero
-            tversky_index = (tp + self.smooth) / (
-                tp + self.alpha * fn + (1 - self.alpha) * fp + self.smooth
-            )
-            tversky_loss = 1 - tversky_index
-            t_loss = torch.pow(tversky_loss, self.gamma)
+            # Clamp denominator to prevent division by zero
+            denom = (tp + self.alpha * fn + (1 - self.alpha) * fp + self.smooth).clamp(min=self.smooth)
+            tversky_index = (tp + self.smooth) / denom
+            # Clamp tversky_loss to [0,1] to avoid negative values from float error
+            tversky_loss = (1 - tversky_index).clamp(min=0.0, max=1.0)
+            # Add eps before pow to prevent grad NaN when base=0
+            t_loss = torch.pow(tversky_loss + 1e-8, self.gamma)
             tversky_losses.append(t_loss)
 
         tversky_loss = torch.stack(tversky_losses).mean()
