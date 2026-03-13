@@ -3,7 +3,7 @@
 Train an OMR model.
 
 Usage:
-    python examples/train_model.py --dataset_path data/sample_cvc --dataset_type cvc
+    python examples/train_model.py --dataset_path data/sample_ds2 --dataset_type ds2
 """
 
 import os
@@ -22,12 +22,12 @@ from oemer_ng.training.loss import FocalTverskyLoss
 def main():
     parser = argparse.ArgumentParser(description="Train OMR Model")
     parser.add_argument(
-        "--dataset_path", type=str, default="data/sample_cvc", help="Path to dataset"
+        "--dataset_path", type=str, default="data/sample_ds2", help="Path to dataset"
     )
     parser.add_argument(
         "--dataset_type",
         type=str,
-        default="cvc",
+        default="ds2",
         choices=["cvc", "ds2", "simple"],
         help="Dataset type",
     )

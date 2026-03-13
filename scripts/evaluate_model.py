@@ -341,7 +341,7 @@ def main():
     parser.add_argument("--model_path", type=str, required=True, help="Path to model checkpoint")
     parser.add_argument("--dataset_path", type=str, required=True, help="Path to dataset")
     parser.add_argument(
-        "--dataset_type", type=str, default="cvc", choices=["cvc", "ds2"], help="Dataset type"
+        "--dataset_type", type=str, default="ds2", choices=["cvc", "ds2"], help="Dataset type"
     )
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of workers")
