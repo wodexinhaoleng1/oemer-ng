@@ -230,6 +230,7 @@ class DeepScoresDataset(OMRDataset):
         split: str = "train",
         seed: int = 42,
         samples_per_epoch: Optional[int] = None,
+        preload: bool = True,
     ):
         super().__init__(transform=transform)
         self.root_dir = Path(root_dir)
@@ -257,6 +258,25 @@ class DeepScoresDataset(OMRDataset):
 
         # Pre-compute all (pair_idx, top, left) sliding-window patches.
         self.patches: List[Tuple[int, int, int]] = self._compute_patches()
+
+        # Optionally preload all images into RAM so workers never touch disk.
+        # On Linux, forked workers inherit this dict via copy-on-write for free.
+        self._image_cache: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
+        if preload:
+            print(f"Preloading {len(self.pairs)} images into RAM …")
+            for i, (img_path, seg_path) in enumerate(self.pairs):
+                img = cv2.imread(str(img_path))
+                if img is None:
+                    continue
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                seg = cv2.imread(str(seg_path), cv2.IMREAD_GRAYSCALE)
+                if seg is None:
+                    continue
+                h, w = img.shape[:2]
+                if seg.shape != (h, w):
+                    seg = cv2.resize(seg, (w, h), interpolation=cv2.INTER_NEAREST)
+                self._image_cache[i] = (img, seg)
+            print(f"Preload done. Cache size: {len(self._image_cache)} images.")
 
     # ------------------------------------------------------------------
     # Initialisation helpers
@@ -333,34 +353,38 @@ class DeepScoresDataset(OMRDataset):
         pair_idx, top, left = self.patches[idx % len(self.patches)]
         img_path, seg_path = self.pairs[pair_idx]
 
-        # Load full images.
-        image = cv2.imread(str(img_path))
-        if image is None:
-            raise ValueError(f"Failed to load image: {img_path}")
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # Retrieve full image from RAM cache or disk.
+        if pair_idx in self._image_cache:
+            image_full = self._image_cache[pair_idx][0]
+            seg_full = self._image_cache[pair_idx][1]
+        else:
+            image_full = cv2.imread(str(img_path))
+            if image_full is None:
+                raise ValueError(f"Failed to load image: {img_path}")
+            image_full = cv2.cvtColor(image_full, cv2.COLOR_BGR2RGB)
+            seg_full = cv2.imread(str(seg_path), cv2.IMREAD_GRAYSCALE)
+            if seg_full is None:
+                raise ValueError(f"Failed to load segmentation: {seg_path}")
+            h0, w0 = image_full.shape[:2]
+            if seg_full.shape != (h0, w0):
+                seg_full = cv2.resize(seg_full, (w0, h0), interpolation=cv2.INTER_NEAREST)
 
-        seg = cv2.imread(str(seg_path), cv2.IMREAD_GRAYSCALE)
-        if seg is None:
-            raise ValueError(f"Failed to load segmentation: {seg_path}")
+        h, w = image_full.shape[:2]
 
-        h, w, _ = image.shape
-        if seg.shape != (h, w):
-            seg = cv2.resize(seg, (w, h), interpolation=cv2.INTER_NEAREST)
-
-        # Extract the sliding-window crop, padding if the window extends
-        # beyond the image boundary.
+        # Crop the patch first (pad only when window exceeds image boundary).
         pad_bottom = max(0, top + self.win_size - h)
         pad_right = max(0, left + self.win_size - w)
         if pad_bottom > 0 or pad_right > 0:
-            image = cv2.copyMakeBorder(
-                image, 0, pad_bottom, 0, pad_right, cv2.BORDER_REFLECT
+            image_full = cv2.copyMakeBorder(
+                image_full, 0, pad_bottom, 0, pad_right, cv2.BORDER_REFLECT
             )
-            seg = cv2.copyMakeBorder(
-                seg, 0, pad_bottom, 0, pad_right, cv2.BORDER_CONSTANT, value=0
+            seg_full = cv2.copyMakeBorder(
+                seg_full, 0, pad_bottom, 0, pad_right, cv2.BORDER_CONSTANT, value=0
             )
 
-        image = image[top : top + self.win_size, left : left + self.win_size]
-        seg = seg[top : top + self.win_size, left : left + self.win_size]
+        # Copy only the small patch — avoids copying the entire full-res image.
+        image = image_full[top : top + self.win_size, left : left + self.win_size].copy()
+        seg = seg_full[top : top + self.win_size, left : left + self.win_size].copy()
 
         # Convert class-index segmentation map to one-hot multi-channel label.
         label = np.zeros(

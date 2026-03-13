@@ -124,8 +124,11 @@ class Trainer:
         pbar = tqdm(self.train_loader, desc=f"Epoch {self.current_epoch + 1}")
         self.optimizer.zero_grad()
 
-        # Save initial model state to restore if NaN corrupts weights
+        # Save initial model state to restore if NaN corrupts weights.
+        # Cloning the full state dict every step is expensive; we refresh it
+        # every 100 optimiser steps instead to amortise the cost.
         _last_good_state = {k: v.clone() for k, v in self.model.state_dict().items()}
+        _steps_since_save = 0
 
         for batch_idx, (data, target) in enumerate(pbar):
             data, target = data.to(self.device), target.to(self.device)
@@ -167,8 +170,11 @@ class Trainer:
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 self.optimizer.zero_grad()
-                # Save good state after successful update
-                _last_good_state = {k: v.clone() for k, v in self.model.state_dict().items()}
+                # Refresh the safety snapshot every 100 successful steps.
+                _steps_since_save += 1
+                if _steps_since_save >= 100:
+                    _last_good_state = {k: v.clone() for k, v in self.model.state_dict().items()}
+                    _steps_since_save = 0
 
             # Statistics (multiply back by accumulation_steps for accurate logging)
             actual_loss = loss.item() * self.accumulation_steps

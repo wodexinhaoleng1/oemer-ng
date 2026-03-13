@@ -33,13 +33,14 @@ def main():
     )
     parser.add_argument("--val_path", type=str, default=None, help="Path to validation dataset")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
-    parser.add_argument("--batch_size", type=int, default=4, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=8, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--num_workers", type=int, default=8, help="Number of workers")
     parser.add_argument("--stride", type=int, default=None, help="Sliding window stride (default: win_size//2)")
     parser.add_argument("--samples_per_epoch", type=int, default=None, help="Max patches per epoch (default: all)")
     parser.add_argument("--base_channels", type=int, default=64, help="Model base channels")
     parser.add_argument("--compile", action="store_true", help="Enable torch.compile (PyTorch 2+)")
+    parser.add_argument("--no_preload", action="store_true", help="Disable image preloading into RAM")
     parser.add_argument(
         "--checkpoint_dir", type=str, default="checkpoints", help="Directory to save checkpoints"
     )
@@ -100,6 +101,7 @@ def main():
         win_size=256,
         stride=args.stride,
         samples_per_epoch=args.samples_per_epoch,
+        preload=False,
     )
 
     print(f"Train batches: {len(train_loader)}")
