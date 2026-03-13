@@ -229,12 +229,14 @@ class DeepScoresDataset(OMRDataset):
         val_ratio: float = 0.2,
         split: str = "train",
         seed: int = 42,
+        samples_per_epoch: Optional[int] = None,
     ):
         super().__init__(transform=transform)
         self.root_dir = Path(root_dir)
         self.win_size = win_size
         self.stride = stride if stride is not None else win_size // 2
         self.augment = augment
+        self.samples_per_epoch = samples_per_epoch
 
         self.images_dir = self.root_dir / "images"
         self.seg_dir = self.root_dir / "segmentation"
@@ -323,10 +325,12 @@ class DeepScoresDataset(OMRDataset):
     # ------------------------------------------------------------------
 
     def __len__(self) -> int:
+        if self.samples_per_epoch is not None:
+            return min(self.samples_per_epoch, len(self.patches))
         return len(self.patches)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        pair_idx, top, left = self.patches[idx]
+        pair_idx, top, left = self.patches[idx % len(self.patches)]
         img_path, seg_path = self.pairs[pair_idx]
 
         # Load full images.

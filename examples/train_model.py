@@ -37,6 +37,9 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--num_workers", type=int, default=8, help="Number of workers")
     parser.add_argument("--stride", type=int, default=None, help="Sliding window stride (default: win_size//2)")
+    parser.add_argument("--samples_per_epoch", type=int, default=None, help="Max patches per epoch (default: all)")
+    parser.add_argument("--base_channels", type=int, default=64, help="Model base channels")
+    parser.add_argument("--compile", action="store_true", help="Enable torch.compile (PyTorch 2+)")
     parser.add_argument(
         "--checkpoint_dir", type=str, default="checkpoints", help="Directory to save checkpoints"
     )
@@ -59,8 +62,14 @@ def main():
         num_classes = 3
         n_channels = 1
 
-    print(f"Initializing model with n_channels={n_channels}, num_classes={num_classes}")
-    model = OMRModel(n_channels=n_channels, num_classes=num_classes, mode="segmentation")
+    torch.backends.cudnn.benchmark = True
+
+    print(f"Initializing model with n_channels={n_channels}, num_classes={num_classes}, base_channels={args.base_channels}")
+    model = OMRModel(n_channels=n_channels, num_classes=num_classes, mode="segmentation", base_channels=args.base_channels)
+
+    if args.compile:
+        print("Compiling model with torch.compile...")
+        model = torch.compile(model)
 
     # Data Transforms
     # Basic transforms. More complex augmentations are handled in Dataset or can be added here.
@@ -90,6 +99,7 @@ def main():
         transform=transform,
         win_size=256,
         stride=args.stride,
+        samples_per_epoch=args.samples_per_epoch,
     )
 
     print(f"Train batches: {len(train_loader)}")
