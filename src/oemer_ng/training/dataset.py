@@ -274,22 +274,201 @@ class SimpleOMRDataset(OMRDataset):
         return image, mask
 
 
+class NoteHeadDataset(OMRDataset):
+    """Dataset for training NoteHeadModel (Model 2) on DeepScores V2 data.
+
+    Expected directory layout::
+
+        root_dir/
+            images/             # Raw grayscale score images (.png)
+            stage1_masks/       # Symbol probability maps from Model 1 (optional)
+            note_head/          # Note-head binary masks
+            stem/               # Note-stem binary masks
+            beam/               # Beam binary masks
+            rest/               # Rest binary masks
+            flag/               # Flag binary masks
+            dot/                # Dot binary masks
+            accidental/         # Accidental binary masks
+
+    If a foreground sub-directory does not exist its contribution to the
+    target mask is treated as all-zero (incomplete annotations are allowed).
+
+    If ``stage1_masks/`` exists *or* ``stage1_masks_dir`` is supplied the
+    symbol probability map is appended as a second input channel, yielding an
+    input tensor of shape ``(2, H, W)``.  Otherwise the input shape is
+    ``(1, H, W)``.
+
+    The target mask has shape ``(8, H, W)`` in one-hot format; channel 0 is
+    the background (``1 − union_of_foreground_classes``).
+
+    Args:
+        root_dir: Root directory of the dataset (see layout above).
+        win_size: Size of the random square crop.
+        transform: Optional transform applied to the image tensor only.
+        samples_per_epoch: Virtual epoch size (random sampling with
+            replacement when larger than the number of available files).
+        stage1_masks_dir: Explicit path to the stage-1 probability maps
+            directory.  Overrides the default ``root_dir/stage1_masks/``.
+    """
+
+    # Ordered list of foreground class sub-directories (classes 1–7)
+    FOREGROUND_DIRS: List[str] = [
+        "note_head",
+        "stem",
+        "beam",
+        "rest",
+        "flag",
+        "dot",
+        "accidental",
+    ]
+
+    def __init__(
+        self,
+        root_dir: str,
+        win_size: int = 256,
+        transform: Optional[Callable] = None,
+        samples_per_epoch: Optional[int] = None,
+        stage1_masks_dir: Optional[str] = None,
+    ):
+        super().__init__(transform=transform)
+        self.root_dir = Path(root_dir)
+        self.win_size = win_size
+
+        self.images_dir = self.root_dir / "images"
+        self.image_files = sorted(self.images_dir.glob("*.png"))
+        if not self.image_files:
+            raise ValueError(f"No PNG images found in {self.images_dir}")
+
+        self.samples_per_epoch = (
+            samples_per_epoch if samples_per_epoch is not None else len(self.image_files)
+        )
+
+        # Foreground mask directories (may not all exist)
+        self.fg_dirs: List[Optional[Path]] = []
+        for sub in self.FOREGROUND_DIRS:
+            p = self.root_dir / sub
+            self.fg_dirs.append(p if p.is_dir() else None)
+
+        # Stage-1 probability map directory (optional)
+        if stage1_masks_dir is not None:
+            s1_dir = Path(stage1_masks_dir)
+        else:
+            s1_dir = self.root_dir / "stage1_masks"
+        self.stage1_masks_dir: Optional[Path] = s1_dir if s1_dir.is_dir() else None
+
+    def __len__(self) -> int:
+        return self.samples_per_epoch
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        idx = idx % len(self.image_files)
+
+        img_path = self.image_files[idx]
+        stem = img_path.stem
+
+        # Load grayscale image
+        image = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+        if image is None:
+            raise ValueError(f"Failed to load image: {img_path}")
+        h, w = image.shape
+
+        # Load foreground masks (resize to match image if needed)
+        fg_masks: List[np.ndarray] = []
+        for fg_dir in self.fg_dirs:
+            if fg_dir is not None:
+                mask_path = fg_dir / f"{stem}.png"
+                if mask_path.exists():
+                    m = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+                    if m is not None:
+                        if m.shape != (h, w):
+                            m = cv2.resize(m, (w, h), interpolation=cv2.INTER_NEAREST)
+                        fg_masks.append((m > 127).astype(np.float32))
+                        continue
+            fg_masks.append(np.zeros((h, w), dtype=np.float32))
+
+        # Load stage-1 mask (optional)
+        stage1_arr: Optional[np.ndarray] = None
+        if self.stage1_masks_dir is not None:
+            s1_path = self.stage1_masks_dir / f"{stem}.png"
+            if s1_path.exists():
+                s1 = cv2.imread(str(s1_path), cv2.IMREAD_GRAYSCALE)
+                if s1 is not None:
+                    if s1.shape != (h, w):
+                        s1 = cv2.resize(s1, (w, h), interpolation=cv2.INTER_NEAREST)
+                    stage1_arr = s1.astype(np.float32) / 255.0
+
+        # Random crop / resize
+        if h > self.win_size and w > self.win_size:
+            top = random.randint(0, h - self.win_size)
+            left = random.randint(0, w - self.win_size)
+            image = image[top : top + self.win_size, left : left + self.win_size]
+            fg_masks = [m[top : top + self.win_size, left : left + self.win_size] for m in fg_masks]
+            if stage1_arr is not None:
+                stage1_arr = stage1_arr[top : top + self.win_size, left : left + self.win_size]
+        else:
+            image = cv2.resize(image, (self.win_size, self.win_size))
+            fg_masks = [
+                cv2.resize(m, (self.win_size, self.win_size), interpolation=cv2.INTER_NEAREST)
+                for m in fg_masks
+            ]
+            if stage1_arr is not None:
+                stage1_arr = cv2.resize(
+                    stage1_arr, (self.win_size, self.win_size), interpolation=cv2.INTER_LINEAR
+                )
+
+        # Build one-hot target (8, H, W): channel 0 = background
+        fg_union = np.zeros((self.win_size, self.win_size), dtype=np.float32)
+        for m in fg_masks:
+            fg_union = np.maximum(fg_union, m)
+        background = 1.0 - fg_union
+        mask = np.stack([background] + fg_masks, axis=0)  # (8, H, W)
+
+        # Image tensor (normalised to [0, 1])
+        image_f = image.astype(np.float32) / 255.0
+        img_tensor = torch.from_numpy(image_f).unsqueeze(0)  # (1, H, W)
+
+        if stage1_arr is not None:
+            s1_tensor = torch.from_numpy(stage1_arr).unsqueeze(0)  # (1, H, W)
+            img_tensor = torch.cat([img_tensor, s1_tensor], dim=0)  # (2, H, W)
+
+        if self.transform:
+            img_tensor = self.transform(img_tensor)
+
+        return img_tensor, torch.from_numpy(mask)
+
+
 def create_dataloaders(
     train_dir: str,
-    dataset_type: str = "cvc",  # 'cvc', 'ds2', 'simple'
+    dataset_type: str = "cvc",  # 'cvc', 'ds2', 'simple', 'note_head'
     val_dir: Optional[str] = None,
     batch_size: int = 32,
     num_workers: int = 4,
     transform: Optional[Callable] = None,
     **kwargs,
 ) -> Tuple[DataLoader, Optional[DataLoader]]:
+    """Create training (and optionally validation) DataLoaders.
 
+    Args:
+        train_dir: Path to the training dataset root directory.
+        dataset_type: One of ``"cvc"``, ``"ds2"``, ``"simple"``, or
+            ``"note_head"``.
+        val_dir: Optional path to the validation dataset root directory.
+        batch_size: Batch size for both loaders.
+        num_workers: Number of DataLoader worker processes.
+        transform: Optional transform applied to images.
+        **kwargs: Extra keyword arguments forwarded to the dataset constructor.
+
+    Returns:
+        ``(train_loader, val_loader)`` — ``val_loader`` is ``None`` when
+        ``val_dir`` is not provided.
+    """
     if dataset_type == "cvc":
         DatasetClass = CvcMuscimaDataset
     elif dataset_type == "ds2":
         DatasetClass = DeepScoresDataset
     elif dataset_type == "simple":
         DatasetClass = lambda *args, **kw: SimpleOMRDataset(num_samples=1000, **kw)
+    elif dataset_type == "note_head":
+        DatasetClass = NoteHeadDataset
     else:
         raise ValueError(f"Unknown dataset type: {dataset_type}")
 
@@ -310,3 +489,41 @@ def create_dataloaders(
         )
 
     return train_loader, val_loader
+
+
+def create_notehead_dataloaders(
+    train_dir: str,
+    val_dir: Optional[str] = None,
+    stage1_masks_dir: Optional[str] = None,
+    batch_size: int = 32,
+    num_workers: int = 4,
+    transform: Optional[Callable] = None,
+    **kwargs,
+) -> Tuple[DataLoader, Optional[DataLoader]]:
+    """Convenience wrapper for creating NoteHeadDataset DataLoaders (Model 2).
+
+    Args:
+        train_dir: Path to the training dataset root directory.
+        val_dir: Optional path to the validation dataset root directory.
+        stage1_masks_dir: Path to the directory containing Model 1 symbol
+            probability maps.  When ``None`` the dataset looks for a
+            ``stage1_masks/`` sub-directory inside ``train_dir`` / ``val_dir``.
+        batch_size: Batch size for both loaders.
+        num_workers: Number of DataLoader worker processes.
+        transform: Optional transform applied to images.
+        **kwargs: Extra keyword arguments forwarded to NoteHeadDataset.
+
+    Returns:
+        ``(train_loader, val_loader)`` — ``val_loader`` is ``None`` when
+        ``val_dir`` is not provided.
+    """
+    return create_dataloaders(
+        train_dir=train_dir,
+        dataset_type="note_head",
+        val_dir=val_dir,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        transform=transform,
+        stage1_masks_dir=stage1_masks_dir,
+        **kwargs,
+    )
