@@ -740,7 +740,13 @@ def create_dataloaders(
 
     train_dataset = DatasetClass(train_dir, transform=transform, **kwargs)
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=4 if num_workers > 0 else None,
     )
 
     val_loader = None
@@ -752,6 +758,8 @@ def create_dataloaders(
             shuffle=False,
             num_workers=num_workers,
             pin_memory=True,
+            persistent_workers=num_workers > 0,
+            prefetch_factor=4 if num_workers > 0 else None,
         )
 
     return train_loader, val_loader
