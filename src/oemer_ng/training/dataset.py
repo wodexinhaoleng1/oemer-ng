@@ -158,75 +158,341 @@ class CvcMuscimaDataset(OMRDataset):
 
 
 class DeepScoresDataset(OMRDataset):
-    """
-    Dataset for DeepScores.
-    Structure:
+    """Dataset for DeepScores V2 (Model 1 / seg_net) segmentation training.
+
+    Directory structure::
+
         root_dir/
-            images/
-            segmentation/
+            images/         # Input sheet music images (.png)
+            segmentation/   # Multi-channel segmentation labels (*_seg.png or *.png)
+
+    Loading logic:
+
+    1. All ``.png`` files in ``images/`` are paired with their corresponding
+       segmentation file (``*_seg.png`` first, then ``*.png``) in
+       ``segmentation/``.
+    2. Paired files are split into train / validation subsets using a fixed
+       random seed so the split is reproducible.
+    3. Sliding-window crop coordinates (``win_size × win_size``) are
+       pre-computed with step size ``stride`` for every image.  For each image
+       the maximum *y*-coordinate that contains staff-line content (label
+       channel index 1) is determined so that blank bottom regions of the
+       sheet are excluded from the patch list.  The resulting coordinate list
+       per image is randomly shuffled.
+    4. During training (``augment=True``) the following augmentations are
+       applied **synchronously** to the image *and* every channel of the
+       multi-channel label:
+
+       * Random scaling (factor 0.8–1.2)
+       * Random perspective warp (up to 5 % margin distortion)
+
+       The following are applied to the **image only**:
+
+       * Gaussian blur (kernel 3 or 5, probability 0.3)
+       * Additive noise / colour dithering (σ = 10, probability 0.5)
+       * Brightness / contrast pixel perturbation (probability 0.5)
+
+    The returned ``label`` tensor has shape ``(CHANNEL_NUM, H, W)`` as a
+    one-hot float32 array:
+
+    * channel 0 – background
+    * channel 1 – staff lines
+    * channel 2 – symbol regions
+    * channel 3 – other
+
+    Args:
+        root_dir: Root directory (see layout above).
+        win_size: Sliding-window crop size in pixels.  Defaults to 288.
+        stride: Sliding-window step size in pixels.  Defaults to
+            ``win_size // 2`` when ``None``.
+        transform: Optional normalisation transform applied to the *image*
+            tensor only, after augmentation.
+        augment: Whether to apply training augmentations.  Defaults to
+            ``True``.
+        val_ratio: Fraction of images reserved for validation.  Defaults to
+            0.2.
+        split: ``"train"`` or ``"val"``.  Defaults to ``"train"``.
+        seed: Random seed used for the reproducible train/val file split.
+            Defaults to 42.
     """
+
+    #: Number of output label channels (background + 3 foreground classes).
+    CHANNEL_NUM: int = 4
 
     def __init__(
         self,
         root_dir: str,
-        win_size: int = 256,  # DeepScores usually uses larger win_size
+        win_size: int = 288,
+        stride: Optional[int] = None,
         transform: Optional[Callable] = None,
+        augment: bool = True,
+        val_ratio: float = 0.2,
+        split: str = "train",
+        seed: int = 42,
     ):
         super().__init__(transform=transform)
         self.root_dir = Path(root_dir)
         self.win_size = win_size
+        self.stride = stride if stride is not None else win_size // 2
+        self.augment = augment
+
         self.images_dir = self.root_dir / "images"
         self.seg_dir = self.root_dir / "segmentation"
 
-        self.image_files = sorted(list(self.images_dir.glob("*.png")))
+        # Collect all (image_path, seg_path) pairs and split train / val.
+        all_pairs = self._find_pairs()
+        rng_split = random.Random(seed)
+        shuffled = list(all_pairs)
+        rng_split.shuffle(shuffled)
+        if val_ratio > 0.0 and len(shuffled) > 1:
+            n_val = max(1, int(len(shuffled) * val_ratio))
+        else:
+            n_val = 0
+        if split == "val":
+            self.pairs: List[Tuple[Path, Path]] = shuffled[:n_val]
+        else:
+            self.pairs = shuffled[n_val:]
+
+        # Pre-compute all (pair_idx, top, left) sliding-window patches.
+        self.patches: List[Tuple[int, int, int]] = self._compute_patches()
+
+    # ------------------------------------------------------------------
+    # Initialisation helpers
+    # ------------------------------------------------------------------
+
+    def _find_pairs(self) -> List[Tuple[Path, Path]]:
+        """Return sorted list of (image_path, seg_path) pairs."""
+        pairs: List[Tuple[Path, Path]] = []
+        for img_path in sorted(self.images_dir.glob("*.png")):
+            seg_path = self.seg_dir / (img_path.stem + "_seg.png")
+            if not seg_path.exists():
+                seg_path = self.seg_dir / (img_path.stem + ".png")
+            if seg_path.exists():
+                pairs.append((img_path, seg_path))
+        return pairs
+
+    def _compute_patches(self) -> List[Tuple[int, int, int]]:
+        """Pre-compute ``(pair_idx, top, left)`` for all valid patches.
+
+        For each image the segmentation label is loaded to determine the
+        maximum *y*-coordinate with staff-line content (channel 1).  Patches
+        that start entirely below this row are skipped, which avoids
+        training on the blank bottom margins common in printed music sheets.
+        """
+        patches: List[Tuple[int, int, int]] = []
+        rng = random.Random(0)  # Fixed seed: reproducible per-image shuffle.
+        for pair_idx, (img_path, seg_path) in enumerate(self.pairs):
+            img = cv2.imread(str(img_path))
+            if img is None:
+                continue
+            h, w = img.shape[:2]
+
+            # Find the lowest row that contains a staff-line pixel so we can
+            # skip blank bottom regions of the sheet.
+            max_y = h
+            seg = cv2.imread(str(seg_path), cv2.IMREAD_GRAYSCALE)
+            if seg is not None:
+                if seg.shape != (h, w):
+                    seg = cv2.resize(seg, (w, h), interpolation=cv2.INTER_NEAREST)
+                staff_rows = np.where(seg == 1)[0]
+                if len(staff_rows) > 0:
+                    # Allow one extra window past the last staff row so that
+                    # patches which *contain* the last staff line (i.e. start
+                    # above it but extend below it) are not accidentally
+                    # excluded.
+                    max_y = min(int(staff_rows.max()) + self.win_size, h)
+
+            # Enumerate all top-left corners of the sliding window grid.
+            coords: List[Tuple[int, int]] = []
+            top = 0
+            while top < max_y:
+                left = 0
+                while left < w:
+                    coords.append((top, left))
+                    left += self.stride
+                top += self.stride
+
+            rng.shuffle(coords)
+            for top_c, left_c in coords:
+                patches.append((pair_idx, top_c, left_c))
+
+        return patches
+
+    # ------------------------------------------------------------------
+    # Dataset protocol
+    # ------------------------------------------------------------------
 
     def __len__(self) -> int:
-        return len(self.image_files)
+        return len(self.patches)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        img_path = self.image_files[idx]
-        # Assumes segmentation file has same name but _seg.png suffix or similar
-        # oemer logic: img.png -> img_seg.png
-        seg_path = self.seg_dir / (img_path.stem + "_seg.png")
-        if not seg_path.exists():
-            seg_path = self.seg_dir / (img_path.stem + ".png")
+        pair_idx, top, left = self.patches[idx]
+        img_path, seg_path = self.pairs[pair_idx]
 
-        image = cv2.imread(str(img_path))  # RGB
+        # Load full images.
+        image = cv2.imread(str(img_path))
+        if image is None:
+            raise ValueError(f"Failed to load image: {img_path}")
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        seg = cv2.imread(str(seg_path), cv2.IMREAD_GRAYSCALE)  # Class indices
+        seg = cv2.imread(str(seg_path), cv2.IMREAD_GRAYSCALE)
+        if seg is None:
+            raise ValueError(f"Failed to load segmentation: {seg_path}")
 
-        if image is None or seg is None:
-            raise ValueError(f"Error loading {img_path} or {seg_path}")
-
-        # Resize/Crop
         h, w, _ = image.shape
-        if h > self.win_size and w > self.win_size:
-            top = random.randint(0, h - self.win_size)
-            left = random.randint(0, w - self.win_size)
+        if seg.shape != (h, w):
+            seg = cv2.resize(seg, (w, h), interpolation=cv2.INTER_NEAREST)
 
-            image = image[top : top + self.win_size, left : left + self.win_size]
-            seg = seg[top : top + self.win_size, left : left + self.win_size]
-        else:
-            image = cv2.resize(image, (self.win_size, self.win_size))
-            seg = cv2.resize(seg, (self.win_size, self.win_size), interpolation=cv2.INTER_NEAREST)
+        # Extract the sliding-window crop, padding if the window extends
+        # beyond the image boundary.
+        pad_bottom = max(0, top + self.win_size - h)
+        pad_right = max(0, left + self.win_size - w)
+        if pad_bottom > 0 or pad_right > 0:
+            image = cv2.copyMakeBorder(
+                image, 0, pad_bottom, 0, pad_right, cv2.BORDER_REFLECT
+            )
+            seg = cv2.copyMakeBorder(
+                seg, 0, pad_bottom, 0, pad_right, cv2.BORDER_CONSTANT, value=0
+            )
 
-        # Convert seg to one-hot
-        # Assume max class index is small. oemer uses ~4 channels?
-        # We will assume 4 classes for now: 0: bg, 1: staff, 2: symbol, 3: other
-        num_classes = 4
-        mask = np.zeros((num_classes, self.win_size, self.win_size), dtype=np.float32)
-        for i in range(num_classes):
-            mask[i] = (seg == i).astype(np.float32)
+        image = image[top : top + self.win_size, left : left + self.win_size]
+        seg = seg[top : top + self.win_size, left : left + self.win_size]
 
-        image = image.astype(np.float32) / 255.0
-        image = torch.from_numpy(image).permute(2, 0, 1)  # 3CH
-        mask = torch.from_numpy(mask)
+        # Convert class-index segmentation map to one-hot multi-channel label.
+        label = np.zeros(
+            (self.CHANNEL_NUM, self.win_size, self.win_size), dtype=np.float32
+        )
+        for i in range(self.CHANNEL_NUM):
+            label[i] = (seg == i).astype(np.float32)
+
+        # Apply synchronised augmentations (image + label together).
+        if self.augment:
+            image, label = self._augment(image, label)
+
+        # Convert to tensors.
+        img_tensor = torch.from_numpy(image.astype(np.float32) / 255.0).permute(
+            2, 0, 1
+        )  # (3, H, W)
+        label_tensor = torch.from_numpy(label)  # (CHANNEL_NUM, H, W)
 
         if self.transform:
-            image = self.transform(image)
+            img_tensor = self.transform(img_tensor)
 
-        return image, mask
+        return img_tensor, label_tensor
+
+    # ------------------------------------------------------------------
+    # Augmentation helpers
+    # ------------------------------------------------------------------
+
+    def _augment(
+        self, image: np.ndarray, label: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Apply the full augmentation pipeline to *image* and *label*.
+
+        Geometric transforms (scaling, perspective) are applied to both the
+        image and every channel of the multi-channel label so that spatial
+        correspondence is preserved.  Photometric transforms (blur, noise,
+        brightness / contrast) are applied to the image only.
+        """
+        # --- Geometric (synchronized) ---
+        if random.random() < 0.5:
+            image, label = self._random_scale(image, label)
+
+        if random.random() < 0.3:
+            image, label = self._random_perspective(image, label)
+
+        # --- Photometric (image only) ---
+        if random.random() < 0.3:
+            ksize = random.choice([3, 5])
+            image = cv2.GaussianBlur(image, (ksize, ksize), 0)
+
+        if random.random() < 0.5:
+            noise = np.random.normal(0, 10, image.shape).astype(np.float32)
+            image = np.clip(image.astype(np.float32) + noise, 0, 255).astype(np.uint8)
+
+        if random.random() < 0.5:
+            alpha = random.uniform(0.8, 1.2)
+            beta = float(random.randint(-20, 20))
+            image = np.clip(
+                alpha * image.astype(np.float32) + beta, 0, 255
+            ).astype(np.uint8)
+
+        return image, label
+
+    def _random_scale(
+        self, image: np.ndarray, label: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Scale image and label by a random factor in [0.8, 1.2]."""
+        scale = random.uniform(0.8, 1.2)
+        h, w = image.shape[:2]
+        new_h = max(1, int(h * scale))
+        new_w = max(1, int(w * scale))
+        image = cv2.resize(image, (new_w, new_h))
+        scaled: List[np.ndarray] = [
+            cv2.resize(label[i], (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+            for i in range(self.CHANNEL_NUM)
+        ]
+        label = np.stack(scaled, axis=0)
+        return self._crop_or_pad(image, label)
+
+    def _crop_or_pad(
+        self, image: np.ndarray, label: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Pad (reflect) or centre-crop image/label to ``win_size``."""
+        ws = self.win_size
+        h, w = image.shape[:2]
+        pad_h = max(0, ws - h)
+        pad_w = max(0, ws - w)
+        if pad_h > 0 or pad_w > 0:
+            tp, bp = pad_h // 2, pad_h - pad_h // 2
+            lp, rp = pad_w // 2, pad_w - pad_w // 2
+            image = cv2.copyMakeBorder(image, tp, bp, lp, rp, cv2.BORDER_REFLECT)
+            padded: List[np.ndarray] = [
+                cv2.copyMakeBorder(
+                    label[i], tp, bp, lp, rp, cv2.BORDER_CONSTANT, value=0
+                )
+                for i in range(self.CHANNEL_NUM)
+            ]
+            label = np.stack(padded, axis=0)
+            h, w = image.shape[:2]
+        top = (h - ws) // 2
+        left = (w - ws) // 2
+        image = image[top : top + ws, left : left + ws]
+        label = label[:, top : top + ws, left : left + ws]
+        return image, label
+
+    def _random_perspective(
+        self, image: np.ndarray, label: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Apply a random perspective warp to image and every label channel."""
+        h, w = image.shape[:2]
+        margin = max(1, int(min(h, w) * 0.05))
+        src_pts = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
+        dst_pts = np.float32(
+            [
+                [random.randint(0, margin), random.randint(0, margin)],
+                [w - random.randint(0, margin), random.randint(0, margin)],
+                [w - random.randint(0, margin), h - random.randint(0, margin)],
+                [random.randint(0, margin), h - random.randint(0, margin)],
+            ]
+        )
+        M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+        image = cv2.warpPerspective(
+            image, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT
+        )
+        warped: List[np.ndarray] = [
+            cv2.warpPerspective(
+                label[i],
+                M,
+                (w, h),
+                flags=cv2.INTER_NEAREST,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0,
+            )
+            for i in range(self.CHANNEL_NUM)
+        ]
+        label = np.stack(warped, axis=0)
+        return image, label
 
 
 class SimpleOMRDataset(OMRDataset):
